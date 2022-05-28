@@ -19,13 +19,18 @@ import (
 import "C"
 
 //export goRTLSDRCallback
-func goRTLSDRCallback(p1 *C.uchar, p2 C.uint32_t, _ unsafe.Pointer) {
+func goRTLSDRCallback(p1 *C.uchar, p2 C.uint32_t, p3 unsafe.Pointer) {
 	// c buffer to go slice without copying
 	var buf []byte
 	length := int(p2)
-	b := (*reflect.SliceHeader)((unsafe.Pointer(&buf)))
+	b := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
 	b.Cap = length
 	b.Len = length
 	b.Data = uintptr(unsafe.Pointer(p1))
-	clientCb(buf)
+	var cId = (*C.uint32_t)(p3)
+	var id = uint32(*cId)
+	if client, ok := clients.Load(id); ok {
+		var f = client.(ReadAsyncCbT)
+		f(buf)
+	}
 }

@@ -10,6 +10,8 @@ package rtlsdr
 import (
 	"bytes"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"unsafe"
 )
 
@@ -38,12 +40,19 @@ static inline rtlsdr_read_async_cb_t get_go_cb() {
 import "C"
 
 // PackageVersion is the current version
-var PackageVersion = "v2.10.0"
+var PackageVersion = "v2.11.0"
 
 // ReadAsyncCbT defines a user callback function type.
 type ReadAsyncCbT func([]byte)
 
-var clientCb ReadAsyncCbT
+var clientId uint32
+var clients *sync.Map
+
+//var clientCb ReadAsyncCbT
+
+func init() {
+	clients = &sync.Map{}
+}
 
 // Context is the opened device's context.
 type Context C.rtlsdr_dev_t
@@ -571,11 +580,14 @@ func (dev *Context) ReadSync(buf []uint8, leng int) (nRead int, err error) {
 // set to 0 for default buffer count (32).
 // Optional bufLen buffer length, must be multiple of 512, set to 0 for
 // default buffer length (16 * 32 * 512).
-func (dev *Context) ReadAsync(f ReadAsyncCbT, _ *UserCtx, bufNum, bufLen int) error {
-	clientCb = f
+func (dev *Context) ReadAsync(f ReadAsyncCbT, bufNum, bufLen int) error {
+	var nextClientId = atomic.AddUint32(&clientId, 1)
+	var cNextClientId = C.uint32_t(nextClientId)
+	clients.Store(nextClientId, f)
+	defer clients.Delete(nextClientId)
 	i := int(C.rtlsdr_read_async((*C.rtlsdr_dev_t)(dev),
 		(C.rtlsdr_read_async_cb_t)(C.get_go_cb()),
-		nil, // userctx *UserCtx
+		unsafe.Pointer(&cNextClientId),
 		C.uint32_t(bufNum),
 		C.uint32_t(bufLen)))
 	return libError(i)
